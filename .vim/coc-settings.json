@@ -1,0 +1,8 @@
+{
+    "suggest.noselect": true,
+    "pyright.enable": true,
+    "python.analysis.autoImportCompletions": true,
+    "pyright.inlayHints.functionReturnTypes": false,
+    "pyright.inlayHints.variableTypes": false,
+    "pyright.inlayHints.parameterTypes": false,
+}
