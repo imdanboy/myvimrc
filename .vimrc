@@ -171,7 +171,12 @@ set statusline^=%{coc#status()}%{get(b:,'coc_current_function','')}
 " Do default action for previous item
 "nnoremap <silent><nowait> <space>k  :<C-u>CocPrev<CR>
 " Resume latest coc list
-"nnoremap <silent><nowait> <space>p  :<C-u>CocListResume<CR>" }}}
+"nnoremap <silent><nowait> <space>p  :<C-u>CocListResume<CR>"
+
+hi CocFloating ctermbg=237  " Floating menu bg color
+hi CocMenuSel ctermbg=238   " Menu selection bg color
+hi CocSearch ctermfg=12     " Text color of the matching text
+"}}}
 
 " Fzf setting {{{
 " https://github.com/junegunn/fzf.vim/issues/605
