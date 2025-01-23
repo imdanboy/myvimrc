@@ -186,3 +186,7 @@ command! -bang Args call fzf#run(fzf#wrap('args',
 "command! -bang Args call fzf#run(fzf#wrap('args',
 "    \ {'source': map([argidx()]+(argidx()==0?[]:range(argc())[0:argidx()-1])+range(argc())[argidx()+1:], 'argv(v:val)')}, <bang>0))
 " }}}
+
+set background=dark
+set tagfunc=CocTagFunc
+set nofoldenable

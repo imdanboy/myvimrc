@@ -33,5 +33,5 @@ nnoremap <leader>po :call OpenDict(expand('<cword>'))<CR>
 nnoremap <leader>pl :call TextToSpeech(expand('<cword>'))<CR>
 " }}}
 " vim-repl {{{
-nnoremap <leader>r :REPLToggle<Cr>
+nnoremap <leader>repl :REPLToggle<Cr>
 " }}}
