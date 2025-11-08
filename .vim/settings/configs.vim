@@ -1,3 +1,4 @@
+set background=dark
 set hlsearch
 set incsearch
 set ignorecase smartcase
@@ -12,6 +13,10 @@ set suffixesadd+=.py,.sh " file extension for `gf`
 set grepprg=rg\ --vimgrep\ --smart-case\ --follow
 set nocompatible
 syntax on
+set tagfunc=CocTagFunc
+set clipboard=unnamed " set unnamed register as clipboard register
+set tagfunc=CocTagFunc
+set nofoldenable
 
 " Tab configuration {{{
 " Only do this part when compiled with support for autocommands.
@@ -31,4 +36,11 @@ set tabstop=4       " The width of a TAB is set to 4.
 set shiftwidth=4    " Indents will have a width of 4.
 set softtabstop=4   " Sets the number of columns for a TAB.
 set expandtab       " Expand TABs to spaces.
+" }}}
+
+" Setup folds {{{
+augroup filetype_vim
+    autocmd!
+    autocmd FileType vim setlocal foldmethod=marker
+augroup END
 " }}}

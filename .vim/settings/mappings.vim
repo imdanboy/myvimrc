@@ -16,7 +16,7 @@ nmap <F8> :TagbarToggle<CR>
 " }}}
 " Fzf {{{
 nnoremap <C-x>b :Buffers<CR>
-nnoremap <silent> <C-f> :Files<CR>
+nnoremap <silent> <C-x>f :Files<CR>
 nnoremap <silent> <leader>f :Rg<CR>
 " }}}
 " Vimwiki {{{
