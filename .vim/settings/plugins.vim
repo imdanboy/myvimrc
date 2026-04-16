@@ -72,7 +72,9 @@ autocmd vimenter * ++nested colorscheme gruvbox
 " }}}
 
 " wiki.vim {{{
-let g:wiki_root = '~/wiki'
+if isdirectory(expand('~/wiki'))
+  let g:wiki_root = '~/wiki'
+endif
 let g:wiki_filetypes = ['md']
 let g:wiki_link_creation = {
       \ 'md': {
