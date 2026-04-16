@@ -30,3 +30,10 @@ nnoremap <leader>pl :call TextToSpeech(expand('<cword>'))<CR>
 " vim-repl {{{
 nnoremap <leader>repl :REPLToggle<Cr>
 " }}}
+" copy to tmux-buffer {{{
+" [복사] 비주얼 모드에서 Ctrl+y를 누르면 tmux 버퍼로 전송
+vnoremap <C-y> :w !tmux load-buffer -<CR>
+
+" [붙여넣기] 노멀 모드에서 Ctrl+p를 누르면 tmux 버퍼 내용을 아래에 삽입
+nnoremap <C-p> :r !tmux save-buffer -<CR>
+" }}}
