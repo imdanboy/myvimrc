@@ -19,11 +19,6 @@ nnoremap <C-x>b :Buffers<CR>
 nnoremap <silent> <C-x>f :Files<CR>
 nnoremap <silent> <leader>f :Rg<CR>
 " }}}
-" Vimwiki {{{
-" original mapping (with option key) not work in mac
-nnoremap <leader><left> <Plug>VimwikiTableMoveColumnLeft
-nnoremap <leader><right> <Plug>VimwikiTableMoveColumnRight
-" }}}
 " Chinese language learning {{{
 vnoremap <leader>cp "*y
 nnoremap <leader>pc :call EchoPinyin2(getreg('*'))<CR>

@@ -18,7 +18,7 @@ Plug 'tpope/vim-repeat'
 Plug 'preservim/nerdtree'
 Plug 'preservim/tagbar'
 Plug 'jeffkreeftmeijer/vim-numbertoggle'
-Plug 'vimwiki/vimwiki'
+Plug 'lervag/wiki.vim'
 Plug 'sheerun/vim-polyglot'
 Plug 'tmhedberg/SimpylFold'
 Plug 'zyedidia/vim-snake'
@@ -26,27 +26,13 @@ Plug 'neoclide/coc.nvim', {'branch': 'release'}
 Plug 'sillybun/vim-repl'
 Plug 'morhetz/gruvbox'
 Plug 'honza/vim-snippets'
+Plug 'iamcco/markdown-preview.nvim', { 'do': 'cd app && npx --yes yarn install' }
+Plug 'dhruvasagar/vim-table-mode'
 call plug#end()
 
 " Airline {{{
 "Automatically displays all buffers when there's only one tab open.
 let g:airline#extensions#tabline#enabled = 1
-" }}}
-
-" Vimwiki {{{
-" color scheme for vimwiki header
-highlight VimwikiHeader1 term=bold cterm=bold ctermfg=DarkRed
-highlight VimwikiHeader2 term=bold cterm=bold ctermfg=DarkGreen
-highlight VimwikiHeader3 term=bold cterm=bold ctermfg=DarkYellow
-highlight VimwikiHeader4 term=bold cterm=bold ctermfg=DarkBlue
-highlight VimwikiHeader5 term=bold cterm=bold ctermfg=DarkMagenta
-highlight VimwikiHeader6 term=bold cterm=bold ctermfg=DarkCyan
-
-let g:vimwiki_list = [
-      \ {'path': '~/vimwiki', 'nested_syntaxes': {'python': 'python', 'c++': 'cpp', 'bash': 'bash'}},
-      \ {'path': '~/Projects/icloud/vimwiki/', 'syntax': 'markdown', 'ext': 'md'}
-    \ ]
-let g:vimwiki_global_ext = 0 " make sure vimwiki doesn't own all .md files
 " }}}
 
 " vim-repl {{{
@@ -63,7 +49,8 @@ let g:repl_ipython_version = '8'
 "Use 24-bit (true-color) mode in Vim/Neovim when outside tmux.
 "If you're using tmux version 2.2 or later, you can remove the outermost $TMUX check and use tmux's 24-bit color support
 "(see < http://sunaku.github.io/tmux-24bit-color.html#usage > for more information.)
-if (empty($TMUX) && getenv('TERM_PROGRAM') != 'Apple_Terminal')
+"if (empty($TMUX) && getenv('TERM_PROGRAM') != 'Apple_Terminal')
+if (getenv('TERM_PROGRAM') != 'Apple_Terminal')
   if (has("nvim"))
     "For Neovim 0.1.3 and 0.1.4 < https://github.com/neovim/neovim/pull/2198 >
     let $NVIM_TUI_ENABLE_TRUE_COLOR=1
@@ -83,6 +70,36 @@ let g:gruvbox_contrast_dark="hard"
 " set colorscheme
 autocmd vimenter * ++nested colorscheme gruvbox
 " }}}
+
+" wiki.vim {{{
+let g:wiki_root = '~/wiki'
+let g:wiki_filetypes = ['md']
+let g:wiki_link_creation = {
+      \ 'md': {
+      \   'link_type': 'wiki',
+      \   'url_extension': '',
+      \ },
+      \ }
+
+augroup MarkdownHeaderColors
+  autocmd!
+  autocmd Syntax markdown
+      \ highlight htmlH1 term=bold cterm=bold gui=bold ctermfg=Red guifg=#fb4934 |
+      \ highlight htmlH2 term=bold cterm=bold gui=bold ctermfg=Green guifg=#b8bb26 |
+      \ highlight htmlH3 term=bold cterm=bold gui=bold ctermfg=Blue guifg=#83a598 |
+      \ highlight htmlH4 term=bold cterm=bold gui=bold ctermfg=Magenta guifg=#d3869b |
+      \ highlight htmlH5 term=bold cterm=bold gui=bold ctermfg=Cyan guifg=#8ec07c |
+      \ highlight htmlH6 term=bold cterm=bold gui=bold ctermfg=Yellow guifg=#fabd2f
+  autocmd ColorScheme *
+      \ highlight htmlH1 term=bold cterm=bold gui=bold ctermfg=Red guifg=#fb4934 |
+      \ highlight htmlH2 term=bold cterm=bold gui=bold ctermfg=Green guifg=#b8bb26 |
+      \ highlight htmlH3 term=bold cterm=bold gui=bold ctermfg=Blue guifg=#83a598 |
+      \ highlight htmlH4 term=bold cterm=bold gui=bold ctermfg=Magenta guifg=#d3869b |
+      \ highlight htmlH5 term=bold cterm=bold gui=bold ctermfg=Cyan guifg=#8ec07c |
+      \ highlight htmlH6 term=bold cterm=bold gui=bold ctermfg=Yellow guifg=#fabd2f
+augroup END
+" }}}
+
 
 " Coc.vim setting {{{
 " May need for Vim (not Neovim) since coc.nvim calculates byte offset by count
