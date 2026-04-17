@@ -72,9 +72,19 @@ autocmd vimenter * ++nested colorscheme gruvbox
 " }}}
 
 " wiki.vim {{{
-if isdirectory(expand('~/wiki'))
+
+" g:wiki_root 설정 우선순위:
+"   1. 현재 파일 위치에서 위로 올라가며 탐색한 'wiki' 디렉토리
+"   2. ~/wiki 디렉토리 (존재할 경우)
+"   3. 둘 다 없으면 설정하지 않음 (wiki.vim 에러 출력 방지)
+let s:local_wiki = finddir('wiki', '.;')
+
+if !empty(s:local_wiki)
+  let g:wiki_root = fnamemodify(s:local_wiki, ':p')
+elseif isdirectory(expand('~/wiki'))
   let g:wiki_root = '~/wiki'
 endif
+
 let g:wiki_filetypes = ['md']
 let g:wiki_link_creation = {
       \ 'md': {
