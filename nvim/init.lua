@@ -160,7 +160,7 @@ vim.o.inccommand = 'split'
 vim.o.cursorline = true
 
 -- Minimal number of screen lines to keep above and below the cursor.
-vim.o.scrolloff = 10
+vim.o.scrolloff = 0
 
 -- if performing an operation that would fail due to unsaved changes in the buffer (like `:q`),
 -- instead raise a dialog asking if you wish to save the current file(s)
@@ -878,6 +878,16 @@ require('lazy').setup({
       -- cursor location to LINE:COLUMN
       ---@diagnostic disable-next-line: duplicate-set-field
       statusline.section_location = function() return '%2l:%-2v' end
+
+      -- Show open buffers in the tabline (top bar)
+      require('mini.tabline').setup { use_icons = vim.g.have_nerd_font }
+
+      -- Buffer navigation keymaps (similar to unimpaired or common setups)
+      --vim.keymap.set('n', '[b', '<cmd>bprevious<CR>', { desc = 'Go to previous buffer' })
+      --vim.keymap.set('n', ']b', '<cmd>bnext<CR>', { desc = 'Go to next buffer' })
+      -- Optional: Use Tab/Shift-Tab for faster navigation
+      --vim.keymap.set('n', '<Tab>', '<cmd>bnext<CR>', { desc = 'Go to next buffer' })
+      --vim.keymap.set('n', '<S-Tab>', '<cmd>bprevious<CR>', { desc = 'Go to previous buffer' })
 
       -- ... and there is more!
       --  Check out: https://github.com/nvim-mini/mini.nvim
