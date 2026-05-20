@@ -1003,17 +1003,34 @@ require('lazy').setup({
        "nvim-tree/nvim-web-devicons"
       },
     keys = {
-        { '<leader>a', '<cmd>AerialToggle!<CR>', desc = 'Aerial Toggle' },
+        { '<leader>o', '<cmd>AerialToggle!<CR>', desc = 'Aerial Toggle' },
       },
   },
   {
     "lervag/wiki.vim",
     init = function()
-      vim.g.wiki_root = '~/wiki'
-      vim.g.wiki_filetypes = {'md'}
+      vim.g.wiki_filetypes = { 'md' }
       vim.g.wiki_link_extension = '.md'
-      -- Neovim의 leader가 Space로 설정되어 있어도 \ww를 그대로 사용하기 위한 매핑
-      vim.keymap.set('n', '\\ww', '<cmd>WikiIndex<cr>', { desc = 'Wiki Index' })
+      -- 기본 wiki_root. \ww 가 프로젝트 인지 시 동적으로 덮어씀.
+      vim.g.wiki_root = '~/wiki'
+
+      -- \ww: 프로젝트 인지 진입점
+      --   현재 버퍼/cwd 에서 위로 올라가며 CLAUDE.md 검색.
+      --   - 발견: wiki_root 를 해당 디렉토리로 설정 + CLAUDE.md 열기.
+      --   - 미발견: wiki_root 를 ~/wiki 로 복원 + WikiIndex (~/wiki/index.md).
+      vim.keymap.set('n', '\\ww', function()
+        local start = vim.fn.expand('%:p:h')
+        if start == '' or start == '.' then start = vim.fn.getcwd() end
+        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
+        if claude ~= '' then
+          local project_root = vim.fn.fnamemodify(claude, ':p:h')
+          vim.g.wiki_root = project_root
+          vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
+        else
+          vim.g.wiki_root = '~/wiki'
+          vim.cmd('WikiIndex')
+        end
+      end, { desc = 'Wiki Index (project CLAUDE.md or ~/wiki/index.md)' })
     end
   },
 
