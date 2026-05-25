@@ -743,6 +743,19 @@ require('lazy').setup({
           -- },
         },
         opts = {},
+        config = function(_, opts)
+          local ls = require 'luasnip'
+          ls.setup(opts)
+          local s, t, i = ls.snippet, ls.text_node, ls.insert_node
+          ls.add_snippets('markdown', {
+            s('task', {
+              t '## ', i(1, '번호'), t { '.', '**목표:**', '' }, i(2),
+              t { '', '**컨텍스트:**', '' }, i(3),
+              t { '', '**지시사항:**', '' }, i(4),
+              t { '', '**완료 기준:**', '' }, i(0),
+            }),
+          })
+        end,
       },
     },
     ---@module 'blink.cmp'
@@ -808,25 +821,39 @@ require('lazy').setup({
     },
   },
 
-  { -- You can easily change to a different colorscheme.
-    -- Change the name of the colorscheme plugin below, and then
-    -- change the command in the config to whatever the name of that colorscheme is.
-    --
-    -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'folke/tokyonight.nvim',
+  { -- Colorscheme: catppuccin (latte = 낮용 라이트, mocha/frappe/macchiato = 야간 다크)
+    -- 다른 테마로 바꾸려면 아래 플러그인 이름과 vim.cmd.colorscheme 만 교체.
+    -- 설치된 테마 둘러보기: `:Telescope colorscheme`
+    'catppuccin/nvim',
+    name = 'catppuccin',
     priority = 1000, -- Make sure to load this before all the other start plugins.
     config = function()
-      ---@diagnostic disable-next-line: missing-fields
-      require('tokyonight').setup {
-        styles = {
-          comments = { italic = false }, -- Disable italics in comments
+      require('catppuccin').setup {
+        flavour = 'latte', -- latte | frappe | macchiato | mocha
+        no_italic = true,  -- 댓글/키워드 이탤릭 끔
+        integrations = {
+          -- 기본 enabled: treesitter / telescope / gitsigns / mini / nvimtree
+          neotree = true,
+          render_markdown = true,
+          which_key = true,
+          blink_cmp = true,
+          fidget = true,
+          mason = true,
+          todo_comments = true,
+          markdown = true,
         },
       }
+      vim.cmd.colorscheme 'catppuccin-latte'
 
-      -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      -- <leader>tt: catppuccin latte(light) ↔ macchiato(dark) 토글
+      vim.keymap.set('n', '<leader>tt', function()
+        local current = vim.g.colors_name or ''
+        if current == 'catppuccin-latte' then
+          vim.cmd.colorscheme 'catppuccin-macchiato'
+        else
+          vim.cmd.colorscheme 'catppuccin-latte'
+        end
+      end, { desc = '[T]oggle [T]heme (catppuccin light/dark)' })
     end,
   },
 
@@ -991,6 +1018,9 @@ require('lazy').setup({
       position = 'left',
       width = 30,
            },
+      filtered_items = {
+        hide_gitignored = false,
+      },
          },
      },
   },
@@ -1007,17 +1037,29 @@ require('lazy').setup({
       },
   },
   {
+    'MeanderingProgrammer/render-markdown.nvim',
+    dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-tree/nvim-web-devicons' },
+    ft = { 'markdown' },
+    opts = {},
+    keys = {
+      { '<leader>tm', '<cmd>RenderMarkdown toggle<CR>', desc = '[T]oggle [M]arkdown render', ft = 'markdown' },
+    },
+  },
+  {
     "lervag/wiki.vim",
     init = function()
       vim.g.wiki_filetypes = { 'md' }
       vim.g.wiki_link_extension = '.md'
       -- 기본 wiki_root. \ww 가 프로젝트 인지 시 동적으로 덮어씀.
-      vim.g.wiki_root = '~/wiki'
+      -- wiki.vim 은 ~ 을 자동 확장하지 않으므로 expand() 로 절대경로 변환.
+      vim.g.wiki_root = vim.fn.expand('~/wiki')
 
-      -- \ww: 프로젝트 인지 진입점
-      --   현재 버퍼/cwd 에서 위로 올라가며 CLAUDE.md 검색.
-      --   - 발견: wiki_root 를 해당 디렉토리로 설정 + CLAUDE.md 열기.
-      --   - 미발견: wiki_root 를 ~/wiki 로 복원 + WikiIndex (~/wiki/index.md).
+      -- \ww: 위키 인덱스 (MOC) 진입점
+      --   현재 버퍼/cwd 에서 위로 올라가며 CLAUDE.md 검색 (= 프로젝트 루트 식별용).
+      --   - 발견 + docs/index.md 존재: wiki_root 를 프로젝트 루트로, docs/index.md 열기 (프로젝트 MOC).
+      --   - 발견 + docs/index.md 없음: CLAUDE.md fallback (MOC 아직 없는 기존 프로젝트).
+      --   - 미발견: wiki_root 를 ~/wiki 로 복원 + WikiIndex (~/wiki/index.md, 홈 MOC).
+      --   CLAUDE.md 자체는 Claude Code 세션 초기 프롬프트라 MOC 와 역할이 다름 — 직접 점프하려면 \wc.
       vim.keymap.set('n', '\\ww', function()
         local start = vim.fn.expand('%:p:h')
         if start == '' or start == '.' then start = vim.fn.getcwd() end
@@ -1025,12 +1067,82 @@ require('lazy').setup({
         if claude ~= '' then
           local project_root = vim.fn.fnamemodify(claude, ':p:h')
           vim.g.wiki_root = project_root
-          vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
+          local moc = project_root .. '/docs/index.md'
+          if vim.fn.filereadable(moc) == 1 then
+            vim.cmd('edit ' .. vim.fn.fnameescape(moc))
+          else
+            vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
+          end
         else
-          vim.g.wiki_root = '~/wiki'
+          vim.g.wiki_root = vim.fn.expand('~/wiki')
           vim.cmd('WikiIndex')
         end
-      end, { desc = 'Wiki Index (project CLAUDE.md or ~/wiki/index.md)' })
+      end, { desc = 'Wiki Index / MOC (docs/index.md or ~/wiki/index.md)' })
+
+      -- \wc: CLAUDE.md (Claude Code 세션 초기 프롬프트) 로 점프
+      --   \ww 와 분리 — \ww 는 vault MOC (docs/index.md), \wc 는 프로젝트의 Claude 진입점.
+      vim.keymap.set('n', '\\wc', function()
+        local start = vim.fn.expand('%:p:h')
+        if start == '' or start == '.' then start = vim.fn.getcwd() end
+        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
+        if claude == '' then
+          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+          return
+        end
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
+      end, { desc = 'Wiki CLAUDE.md (Claude Code session prompt)' })
+
+      -- \wt: 오늘의 작업 명세 (docs/task/YYYYMMDD.md) 로 점프
+      --   CLAUDE.md 로 프로젝트 루트를 찾고, <root>/docs/task/<today>.md 열기.
+      --   파일이 없어도 그 경로의 빈 버퍼가 열림 (템플릿 생성은 /new-task 슬래시 커맨드).
+      vim.keymap.set('n', '\\wt', function()
+        local start = vim.fn.expand('%:p:h')
+        if start == '' or start == '.' then start = vim.fn.getcwd() end
+        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
+        if claude == '' then
+          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+          return
+        end
+        local project_root = vim.fn.fnamemodify(claude, ':p:h')
+        local task_path = project_root .. '/docs/task/' .. os.date('%Y%m%d') .. '.md'
+        vim.cmd('edit ' .. vim.fn.fnameescape(task_path))
+      end, { desc = "Wiki Today's Task (docs/task/YYYYMMDD.md)" })
+
+      -- \wr: 오늘의 리포트 (docs/reports/YYYY-MM-DD.md) 로 점프
+      --   리포트는 대시 포맷 (YYYY-MM-DD), task/logs 는 YYYYMMDD 임에 주의.
+      vim.keymap.set('n', '\\wr', function()
+        local start = vim.fn.expand('%:p:h')
+        if start == '' or start == '.' then start = vim.fn.getcwd() end
+        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
+        if claude == '' then
+          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+          return
+        end
+        local project_root = vim.fn.fnamemodify(claude, ':p:h')
+        local report_path = project_root .. '/docs/reports/' .. os.date('%Y-%m-%d') .. '.md'
+        vim.cmd('edit ' .. vim.fn.fnameescape(report_path))
+      end, { desc = "Wiki Today's Report (docs/reports/YYYY-MM-DD.md)" })
+
+      -- \wl: 오늘의 logs 디렉토리 (docs/logs/YYYYMMDD/) 를 neo-tree 로 열기
+      vim.keymap.set('n', '\\wl', function()
+        local start = vim.fn.expand('%:p:h')
+        if start == '' or start == '.' then start = vim.fn.getcwd() end
+        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
+        if claude == '' then
+          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+          return
+        end
+        local project_root = vim.fn.fnamemodify(claude, ':p:h')
+        local logs_dir = project_root .. '/docs/logs/' .. os.date('%Y%m%d')
+        vim.fn.mkdir(logs_dir, 'p')
+        vim.cmd('Neotree dir=' .. vim.fn.fnameescape(logs_dir) .. ' reveal')
+      end, { desc = "Wiki Today's Logs (docs/logs/YYYYMMDD/)" })
+
+      -- \sc: secrets 파일 열기 (~/.wiki-secrets/memo.md)
+      --   shell alias `sc` 는 :! 비대화형 셸에서 안 먹히므로 nvim 안에선 keymap 사용.
+      vim.keymap.set('n', '\\sc', function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/.wiki-secrets/memo.md')))
+      end, { desc = 'Open wiki secrets file' })
     end
   },
 
