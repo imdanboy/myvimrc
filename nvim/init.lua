@@ -323,6 +323,8 @@ require('lazy').setup({
         { '<leader>t', group = '[T]oggle' },
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
         { 'gr', group = 'LSP Actions', mode = { 'n' } },
+        -- \w*: 프로젝트/홈 위키 진입. 상세는 [[/topics/nvim-wiki-keys]].
+        { '\\w', group = 'Wiki' },
       },
     },
   },
@@ -1137,6 +1139,32 @@ require('lazy').setup({
         vim.fn.mkdir(logs_dir, 'p')
         vim.cmd('Neotree dir=' .. vim.fn.fnameescape(logs_dir) .. ' reveal')
       end, { desc = "Wiki Today's Logs (docs/logs/YYYYMMDD/)" })
+
+      -- \wj: 홈 위키 — 오늘의 저널 (~/wiki/journal/YYYY-MM-DD.md)
+      --   프로젝트 task (\wt) 와 대칭. 저널은 대시 포맷.
+      --   파일이 없어도 그 경로의 빈 버퍼가 열림 (생성은 /home-journal-today 스킬).
+      vim.keymap.set('n', '\\wj', function()
+        local path = vim.fn.expand('~/wiki/journal/') .. os.date('%Y-%m-%d') .. '.md'
+        vim.cmd('edit ' .. vim.fn.fnameescape(path))
+      end, { desc = "Wiki home today's Journal (~/wiki/journal/YYYY-MM-DD.md)" })
+
+      -- \wo: 홈 위키 — todos (~/wiki/todos.md)
+      --   't' 는 \wt (project task) 와 충돌하므로 'o' (tOdos) 사용.
+      vim.keymap.set('n', '\\wo', function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/todos.md')))
+      end, { desc = 'Wiki home tOdos (~/wiki/todos.md)' })
+
+      -- \wi: 홈 위키 — journal 인덱스 (~/wiki/journal/index.md)
+      --   홈 vault 전체 인덱스(~/wiki/index.md) 는 \ww 폴백이 담당. 여기 i 는 journal MOC.
+      vim.keymap.set('n', '\\wi', function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/journal/index.md')))
+      end, { desc = 'Wiki home journal Index (~/wiki/journal/index.md)' })
+
+      -- \wb: 홈 위키 — journal inbox (~/wiki/journal/inbox.md)
+      --   raw 캡처용. b = inBox.
+      vim.keymap.set('n', '\\wb', function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/journal/inbox.md')))
+      end, { desc = 'Wiki home journal inBox (~/wiki/journal/inbox.md)' })
 
       -- \sc: secrets 파일 열기 (~/.wiki-secrets/memo.md)
       --   shell alias `sc` 는 :! 비대화형 셸에서 안 먹히므로 nvim 안에선 keymap 사용.
