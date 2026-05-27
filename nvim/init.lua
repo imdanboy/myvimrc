@@ -1056,86 +1056,92 @@ require('lazy').setup({
       -- wiki.vim 은 ~ 을 자동 확장하지 않으므로 expand() 로 절대경로 변환.
       vim.g.wiki_root = vim.fn.expand('~/wiki')
 
+      -- 프로젝트 위키 루트 탐색 헬퍼.
+      --   위로 올라가며 docs/wiki/ 디렉토리를 가진 곳을 프로젝트 위키 루트로 판정.
+      --   CLAUDE.md 는 이제 판별자로 못 씀 — agent-agnostic 부트스트랩으로 홈 위키
+      --   ~/wiki/ 에도 AGENTS.md + CLAUDE.md/GEMINI.md (@AGENTS.md import stub) 를 두기 때문.
+      --   docs/wiki/ 는 llm-wiki 프로젝트 구조의 고유 시그니처라 홈 위키·일반 docs 사이트
+      --   (docs/index.md 만 있는 Sphinx/Docusaurus 등) 와 확실히 구분됨 (WIKI-CONVENTIONS §11).
+      --   반환: 프로젝트 루트 절대경로 또는 nil.
+      local function find_project_wiki_root(start)
+        local wiki_dir = vim.fn.finddir('docs/wiki', start .. ';')
+        if wiki_dir == '' then return nil end
+        local abs = vim.fn.fnamemodify(wiki_dir, ':p'):gsub('/$', '')
+        return vim.fn.fnamemodify(abs, ':h:h') -- .../docs/wiki → docs → 루트
+      end
+
+      -- 키맵 공통: 탐색 시작 디렉토리 (현재 버퍼 dir, 없으면 cwd).
+      local function wiki_start_dir()
+        local d = vim.fn.expand('%:p:h')
+        if d == '' or d == '.' then d = vim.fn.getcwd() end
+        return d
+      end
+
       -- \ww: 위키 인덱스 (MOC) 진입점
-      --   현재 버퍼/cwd 에서 위로 올라가며 CLAUDE.md 검색 (= 프로젝트 루트 식별용).
-      --   - 발견 + docs/index.md 존재: wiki_root 를 프로젝트 루트로, docs/index.md 열기 (프로젝트 MOC).
-      --   - 발견 + docs/index.md 없음: CLAUDE.md fallback (MOC 아직 없는 기존 프로젝트).
+      --   위로 올라가며 docs/wiki/ 로 프로젝트 위키 루트 식별.
+      --   - 발견: wiki_root 를 프로젝트 루트로, docs/index.md (프로젝트 MOC) 열기.
       --   - 미발견: wiki_root 를 ~/wiki 로 복원 + WikiIndex (~/wiki/index.md, 홈 MOC).
-      --   CLAUDE.md 자체는 Claude Code 세션 초기 프롬프트라 MOC 와 역할이 다름 — 직접 점프하려면 \wc.
+      --   CLAUDE.md (agent 부트스트랩) 로 직접 점프하려면 \wc.
       vim.keymap.set('n', '\\ww', function()
-        local start = vim.fn.expand('%:p:h')
-        if start == '' or start == '.' then start = vim.fn.getcwd() end
-        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
-        if claude ~= '' then
-          local project_root = vim.fn.fnamemodify(claude, ':p:h')
-          vim.g.wiki_root = project_root
-          local moc = project_root .. '/docs/index.md'
-          if vim.fn.filereadable(moc) == 1 then
-            vim.cmd('edit ' .. vim.fn.fnameescape(moc))
-          else
-            vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
+        local root = find_project_wiki_root(wiki_start_dir())
+        if root then
+          vim.g.wiki_root = root
+          local moc = root .. '/docs/index.md'
+          if vim.fn.filereadable(moc) == 0 then
+            vim.notify('docs/wiki/ 는 있으나 docs/index.md 없음 — 빈 버퍼로 엶', vim.log.levels.WARN)
           end
+          vim.cmd('edit ' .. vim.fn.fnameescape(moc))
         else
           vim.g.wiki_root = vim.fn.expand('~/wiki')
           vim.cmd('WikiIndex')
         end
       end, { desc = 'Wiki Index / MOC (docs/index.md or ~/wiki/index.md)' })
 
-      -- \wc: CLAUDE.md (Claude Code 세션 초기 프롬프트) 로 점프
-      --   \ww 와 분리 — \ww 는 vault MOC (docs/index.md), \wc 는 프로젝트의 Claude 진입점.
+      -- \wc: CLAUDE.md (agent 세션 부트스트랩) 로 점프
+      --   \ww 와 분리 — \ww 는 vault MOC, \wc 는 agent 부트스트랩 파일.
+      --   홈 위키(~/wiki/CLAUDE.md, @AGENTS.md import) 에서도 동작.
       vim.keymap.set('n', '\\wc', function()
-        local start = vim.fn.expand('%:p:h')
-        if start == '' or start == '.' then start = vim.fn.getcwd() end
-        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
+        local claude = vim.fn.findfile('CLAUDE.md', wiki_start_dir() .. ';')
         if claude == '' then
           vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
           return
         end
         vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
-      end, { desc = 'Wiki CLAUDE.md (Claude Code session prompt)' })
+      end, { desc = 'Wiki CLAUDE.md (agent bootstrap)' })
 
       -- \wt: 오늘의 작업 명세 (docs/task/YYYYMMDD.md) 로 점프
-      --   CLAUDE.md 로 프로젝트 루트를 찾고, <root>/docs/task/<today>.md 열기.
-      --   파일이 없어도 그 경로의 빈 버퍼가 열림 (템플릿 생성은 /new-task 슬래시 커맨드).
+      --   docs/wiki/ 로 프로젝트 위키 루트를 찾고, <root>/docs/task/<today>.md 열기.
+      --   파일이 없어도 그 경로의 빈 버퍼가 열림 (템플릿 생성은 /project-new-task 스킬).
       vim.keymap.set('n', '\\wt', function()
-        local start = vim.fn.expand('%:p:h')
-        if start == '' or start == '.' then start = vim.fn.getcwd() end
-        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
-        if claude == '' then
-          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+        local root = find_project_wiki_root(wiki_start_dir())
+        if not root then
+          vim.notify('docs/wiki/ not found — not in a project wiki', vim.log.levels.WARN)
           return
         end
-        local project_root = vim.fn.fnamemodify(claude, ':p:h')
-        local task_path = project_root .. '/docs/task/' .. os.date('%Y%m%d') .. '.md'
+        local task_path = root .. '/docs/task/' .. os.date('%Y%m%d') .. '.md'
         vim.cmd('edit ' .. vim.fn.fnameescape(task_path))
       end, { desc = "Wiki Today's Task (docs/task/YYYYMMDD.md)" })
 
       -- \wr: 오늘의 리포트 (docs/reports/YYYY-MM-DD.md) 로 점프
       --   리포트는 대시 포맷 (YYYY-MM-DD), task/logs 는 YYYYMMDD 임에 주의.
       vim.keymap.set('n', '\\wr', function()
-        local start = vim.fn.expand('%:p:h')
-        if start == '' or start == '.' then start = vim.fn.getcwd() end
-        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
-        if claude == '' then
-          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+        local root = find_project_wiki_root(wiki_start_dir())
+        if not root then
+          vim.notify('docs/wiki/ not found — not in a project wiki', vim.log.levels.WARN)
           return
         end
-        local project_root = vim.fn.fnamemodify(claude, ':p:h')
-        local report_path = project_root .. '/docs/reports/' .. os.date('%Y-%m-%d') .. '.md'
+        local report_path = root .. '/docs/reports/' .. os.date('%Y-%m-%d') .. '.md'
         vim.cmd('edit ' .. vim.fn.fnameescape(report_path))
       end, { desc = "Wiki Today's Report (docs/reports/YYYY-MM-DD.md)" })
 
       -- \wl: 오늘의 logs 디렉토리 (docs/logs/YYYYMMDD/) 를 neo-tree 로 열기
       vim.keymap.set('n', '\\wl', function()
-        local start = vim.fn.expand('%:p:h')
-        if start == '' or start == '.' then start = vim.fn.getcwd() end
-        local claude = vim.fn.findfile('CLAUDE.md', start .. ';')
-        if claude == '' then
-          vim.notify('CLAUDE.md not found — not in a project', vim.log.levels.WARN)
+        local root = find_project_wiki_root(wiki_start_dir())
+        if not root then
+          vim.notify('docs/wiki/ not found — not in a project wiki', vim.log.levels.WARN)
           return
         end
-        local project_root = vim.fn.fnamemodify(claude, ':p:h')
-        local logs_dir = project_root .. '/docs/logs/' .. os.date('%Y%m%d')
+        local logs_dir = root .. '/docs/logs/' .. os.date('%Y%m%d')
         vim.fn.mkdir(logs_dir, 'p')
         vim.cmd('Neotree dir=' .. vim.fn.fnameescape(logs_dir) .. ' reveal')
       end, { desc = "Wiki Today's Logs (docs/logs/YYYYMMDD/)" })
