@@ -325,6 +325,7 @@ require('lazy').setup({
         { 'gr', group = 'LSP Actions', mode = { 'n' } },
         -- \w*: 프로젝트/홈 위키 진입. 상세는 [[/topics/nvim-wiki-keys]].
         { '\\w', group = 'Wiki' },
+        { '\\wt', group = 'todos (w/h)' },
       },
     },
   },
@@ -1109,10 +1110,11 @@ require('lazy').setup({
         vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.fnamemodify(claude, ':p')))
       end, { desc = 'Wiki CLAUDE.md (agent bootstrap)' })
 
-      -- \wt: 오늘의 작업 명세 (docs/task/YYYYMMDD.md) 로 점프
+      -- \wT: 오늘의 작업 명세 (docs/task/YYYYMMDD.md) 로 점프
       --   docs/wiki/ 로 프로젝트 위키 루트를 찾고, <root>/docs/task/<today>.md 열기.
       --   파일이 없어도 그 경로의 빈 버퍼가 열림 (템플릿 생성은 /project-new-task 스킬).
-      vim.keymap.set('n', '\\wt', function()
+      --   NOTE: \wt 는 todos 프리픽스(\wtw/\wth)에 양보하고 task 는 대문자 \wT 로 이전.
+      vim.keymap.set('n', '\\wT', function()
         local root = find_project_wiki_root(wiki_start_dir())
         if not root then
           vim.notify('docs/wiki/ not found — not in a project wiki', vim.log.levels.WARN)
@@ -1154,11 +1156,14 @@ require('lazy').setup({
         vim.cmd('edit ' .. vim.fn.fnameescape(path))
       end, { desc = "Wiki home today's Journal (~/wiki/journal/YYYY-MM-DD.md)" })
 
-      -- \wo: 홈 위키 — todos (~/wiki/todos.md)
-      --   't' 는 \wt (project task) 와 충돌하므로 'o' (tOdos) 사용.
-      vim.keymap.set('n', '\\wo', function()
-        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/todos.md')))
-      end, { desc = 'Wiki home tOdos (~/wiki/todos.md)' })
+      -- \wtw / \wth: 홈 위키 — todos (업무/개인 분리)
+      --   t=todo, 다음 글자로 work/home 갈라짐. \wt 가 프리픽스가 되며 project task 는 \wT 로 이전.
+      vim.keymap.set('n', '\\wtw', function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/todos-work.md')))
+      end, { desc = 'Wiki home todos · Work (~/wiki/todos-work.md)' })
+      vim.keymap.set('n', '\\wth', function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/todos-home.md')))
+      end, { desc = 'Wiki home todos · Home (~/wiki/todos-home.md)' })
 
       -- \wi: 홈 위키 — journal 인덱스 (~/wiki/journal/index.md)
       --   홈 vault 전체 인덱스(~/wiki/index.md) 는 \ww 폴백이 담당. 여기 i 는 journal MOC.
@@ -1172,11 +1177,204 @@ require('lazy').setup({
         vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/journal/inbox.md')))
       end, { desc = 'Wiki home journal inBox (~/wiki/journal/inbox.md)' })
 
-      -- \sc: secrets 파일 열기 (~/.wiki-secrets/memo.md)
-      --   shell alias `sc` 는 :! 비대화형 셸에서 안 먹히므로 nvim 안에선 keymap 사용.
+      -- ============================================================
+      -- 시크릿 노트: age 암호화 (전략 B-pty — 의존성 0, jobstart pty)
+      --   대상: */wiki/secrets/*.age   (예: ~/wiki/secrets/memo.md.age)
+      --   · 평문은 nvim 버퍼 안에서만. 디스크/동기화 경로엔 .age 암호문만.
+      --   · age 패스프레이즈 모드는 /dev/tty 전용인데, 이 환경에선 `:!` 자식이
+      --     /dev/tty 에 접근 불가("device not configured"). 그래서 jobstart({pty=true})
+      --     로 age 에 새 제어 터미널(pty)을 직접 할당 → age 가 /dev/tty 를 연다.
+      --   · 패스프레이즈: nvim inputsecret() 로 받아 pty 로 전달(chansend). 매번 재입력,
+      --     캐시 안 함, 사용 직후 변수 해제. 평문 출력은 별도 FIFO 로 받아 pty CR/LF
+      --     변환에 오염되지 않게 함.
+      --   · 트레이드오프(전략 A 대비): 패스프레이즈가 입력 순간 nvim 프로세스 메모리에
+      --     잠깐 존재. age-plugin-batchpass(전략 B)와 달리 세션 캐시/추가 바이너리는 없음.
+      -- ============================================================
+      local secret_grp = vim.api.nvim_create_augroup('SecretAge', { clear = true })
+
+      -- 평문 디스크 누수 차단 + shada 억제 (시크릿 버퍼 진입 즉시)
+      local function secret_lockdown()
+        vim.bo.swapfile = false        -- .swp 평문 누수 방지
+        vim.bo.undofile = false        -- 영구 undo 파일 누수 방지
+        vim.bo.bufhidden = 'wipe'      -- 숨길 때 버퍼 폐기(평문 메모리 잔존 최소화)
+        vim.opt_local.backup = false
+        vim.opt_local.writebackup = false
+        -- shada 는 per-buffer 불가 → 세션 동안 기록 차단(마크/레지스터/검색어 누수 방지). 1회 고지.
+        if vim.o.shadafile ~= 'NONE' then
+          vim.o.shadafile = 'NONE'
+          vim.schedule(function()
+            vim.notify('[secret] 이 세션 동안 shada 기록 OFF (시크릿 메타데이터 누수 방지)', vim.log.levels.WARN)
+          end)
+        end
+      end
+
+      -- 복호화: age -d 를 pty job 으로 실행(/dev/tty=pty 확보), 패스프레이즈는 pty 로 전달.
+      -- 평문은 stdout→FIFO→cat reader 로 깨끗하게 수집. 반환: 라인 테이블 또는 nil(+에러).
+      local function age_decrypt(file, pw)
+        local fifo = vim.fn.tempname() .. '.fifo'   -- tempname 부모 dir 은 사용자 전용
+        vim.fn.system({ 'mkfifo', '-m', '600', fifo })
+        if vim.v.shell_error ~= 0 then return nil, 'mkfifo 실패' end
+        local chunks, rdone = { '' }, false
+        local reader = vim.fn.jobstart({ 'cat', fifo }, {
+          on_stdout = function(_, data)
+            if not data then return end
+            chunks[#chunks] = chunks[#chunks] .. data[1]
+            for i = 2, #data do chunks[#chunks + 1] = data[i] end
+          end,
+          on_exit = function() rdone = true end,
+        })
+        if reader <= 0 then vim.fn.delete(fifo); return nil, 'reader 기동 실패' end
+        vim.wait(100)   -- cat 가 fifo read-end 를 열 시간 확보
+        local edone, erc = false, -1
+        local age = vim.fn.jobstart(
+          { 'sh', '-c', 'age -d -- ' .. vim.fn.shellescape(file) .. ' > ' .. vim.fn.shellescape(fifo) },
+          { pty = true, on_exit = function(_, code) erc = code; edone = true end }
+        )
+        if age <= 0 then vim.fn.delete(fifo); return nil, 'age 기동 실패' end
+        vim.fn.chansend(age, pw .. '\n')   -- /dev/tty(pty) 로 패스프레이즈 전달
+        vim.wait(15000, function() return edone and rdone end, 20)
+        vim.fn.delete(fifo)
+        if erc ~= 0 then return nil, '복호화 실패(패스프레이즈?)' end
+        if #chunks > 1 and chunks[#chunks] == '' then table.remove(chunks) end  -- trailing newline
+        return chunks
+      end
+
+      -- 재암호화: 버퍼 평문을 FIFO→age -p stdin 으로, age 는 pty job(패스프레이즈 enter+confirm
+      -- 2회를 pty 로 전달). 암호문 tmp 후 원자적 교체. 평문은 디스크 미경유.
+      local function age_encrypt(file, lines, pw)
+        local fifo = vim.fn.tempname() .. '.fifo'
+        vim.fn.system({ 'mkfifo', '-m', '600', fifo })
+        if vim.v.shell_error ~= 0 then return false, 'mkfifo 실패' end
+        local tmp = file .. '.tmp'
+        local wdone = false
+        local writer = vim.fn.jobstart({ 'sh', '-c', 'cat > ' .. vim.fn.shellescape(fifo) }, {
+          on_exit = function() wdone = true end,
+        })
+        if writer <= 0 then vim.fn.delete(fifo); return false, 'writer 기동 실패' end
+        vim.fn.chansend(writer, table.concat(lines, '\n') .. '\n')
+        vim.fn.chanclose(writer, 'stdin')
+        vim.wait(100)
+        local edone, erc = false, -1
+        local age = vim.fn.jobstart(
+          { 'sh', '-c', 'age -p -o ' .. vim.fn.shellescape(tmp) .. ' < ' .. vim.fn.shellescape(fifo) },
+          { pty = true, on_exit = function(_, code) erc = code; edone = true end }
+        )
+        if age <= 0 then vim.fn.delete(fifo); return false, 'age 기동 실패' end
+        vim.fn.chansend(age, pw .. '\n' .. pw .. '\n')   -- Enter + Confirm
+        vim.wait(15000, function() return edone and wdone end, 20)
+        vim.fn.delete(fifo)
+        if erc ~= 0 then vim.fn.delete(tmp); return false, '암호화 실패' end
+        if vim.loop.fs_rename(tmp, file) == nil and not os.rename(tmp, file) then
+          vim.fn.delete(tmp); return false, '교체 실패'
+        end
+        return true
+      end
+
+      -- .age → 버퍼 로드(복호화). bufnr 명시: startup 지연 호출에서도 안전.
+      local function decrypt_into_buffer(bufnr, file)
+        if not vim.api.nvim_buf_is_valid(bufnr) then return end
+        local pw = vim.fn.inputsecret('age 패스프레이즈 (복호화): ')
+        local lines, err
+        if pw == '' then
+          err = '취소됨'
+        else
+          lines, err = age_decrypt(file, pw)
+        end
+        pw = nil   -- 사용 직후 해제
+        vim.api.nvim_buf_call(bufnr, function()
+          if not lines then
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
+            vim.b[bufnr].secret_decrypt_failed = true   -- 빈 버퍼 저장→암호문 덮어쓰기 거부
+            vim.bo.modifiable = false
+            vim.bo.modified = false
+            vim.api.nvim_echo({ { '[secret] ' .. (err or '복호화 실패') .. ' — .age 원본 보존(:w 차단). 다시 :e 로 재시도.', 'ErrorMsg' } }, true, {})
+            return
+          end
+          vim.bo.modifiable = true
+          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+          vim.b[bufnr].secret_decrypt_failed = false
+          vim.bo.filetype = 'markdown'
+          vim.bo.modified = false
+        end)
+        vim.cmd('redraw!')
+      end
+
+      -- 복호화 트리거: startup 중(BufReadCmd가 VimEnter 이전)이면 :! 터미널 양도가 안 되므로
+      -- VimEnter 이후로 지연(vim-gnupg 와 동일 전략). 지연 중에는 :w 차단 플래그로 보호.
+      vim.api.nvim_create_autocmd('BufReadCmd', {
+        group = secret_grp,
+        pattern = '*/wiki/secrets/*.age',
+        callback = function(ev)
+          secret_lockdown()
+          local file = vim.fn.fnamemodify(ev.match, ':p')
+          local bufnr = ev.buf
+          if vim.fn.filereadable(file) == 0 then
+            -- 새 시크릿(.age 미존재): 복호화 안 함. 빈 markdown 버퍼, 첫 :w 에서 암호화.
+            vim.bo.filetype = 'markdown'
+            vim.b[bufnr].secret_decrypt_failed = false
+            return
+          end
+          vim.b[bufnr].secret_decrypt_failed = true   -- 복호화 완료 전까지 :w 차단
+          if vim.v.vim_did_enter == 1 then
+            decrypt_into_buffer(bufnr, file)
+          else
+            vim.api.nvim_create_autocmd('VimEnter', {
+              once = true,
+              callback = function() decrypt_into_buffer(bufnr, file) end,
+            })
+          end
+        end,
+      })
+
+      -- 재암호화: 버퍼 → .age
+      vim.api.nvim_create_autocmd('BufWriteCmd', {
+        group = secret_grp,
+        pattern = '*/wiki/secrets/*.age',
+        callback = function(ev)
+          if vim.b.secret_decrypt_failed then        -- 복호화 실패 버퍼는 저장 거부(.age 보호)
+            vim.api.nvim_echo({ { '[secret] 복호화 실패 상태 — 저장 거부. .age 원본 보존.', 'ErrorMsg' } }, true, {})
+            return
+          end
+          local file = vim.fn.fnamemodify(ev.match, ':p')
+          local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+          local p1 = vim.fn.inputsecret('age 패스프레이즈 (저장): ')
+          local p2 = vim.fn.inputsecret('확인: ')
+          if p1 == '' then
+            p1 = nil; p2 = nil
+            vim.api.nvim_echo({ { '[secret] 취소됨 — 저장 안 함. .age 보존.', 'WarningMsg' } }, false, {})
+            return
+          end
+          if p1 ~= p2 then
+            p1 = nil; p2 = nil
+            vim.api.nvim_echo({ { '[secret] 패스프레이즈 불일치 — 저장 안 함. 다시 :w.', 'ErrorMsg' } }, true, {})
+            return
+          end
+          local ok, err = age_encrypt(file, lines, p1)
+          p1 = nil; p2 = nil   -- 사용 직후 해제
+          if not ok then
+            vim.api.nvim_echo({ { '[secret] ' .. (err or '실패') .. ' — .age 보존됨. 다시 :w.', 'ErrorMsg' } }, true, {})
+            return
+          end
+          vim.bo.modified = false
+          vim.cmd('redraw!')
+          vim.api.nvim_echo({ { '[secret] 암호화 저장: ' .. vim.fn.fnamemodify(file, ':t'), 'MoreMsg' } }, false, {})
+        end,
+      })
+
+      -- 새 시크릿 파일(.age 미존재): 빈 버퍼 잠금 + markdown. 첫 :w 에서 암호화.
+      vim.api.nvim_create_autocmd('BufNewFile', {
+        group = secret_grp,
+        pattern = '*/wiki/secrets/*.age',
+        callback = function()
+          secret_lockdown()
+          vim.bo.filetype = 'markdown'
+        end,
+      })
+
+      -- \sc: 시크릿 메모 열기 (~/wiki/secrets/memo.md.age, age 자동 복호화)
       vim.keymap.set('n', '\\sc', function()
-        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/.wiki-secrets/memo.md')))
-      end, { desc = 'Open wiki secrets file' })
+        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/secrets/memo.md.age')))
+      end, { desc = 'Open wiki secret memo (age, ~/wiki/secrets/memo.md.age)' })
     end
   },
 
