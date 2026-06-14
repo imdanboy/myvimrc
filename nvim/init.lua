@@ -192,13 +192,24 @@ vim.diagnostic.config {
 
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
--- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
--- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
--- is not what someone will guess without a bit more experience.
---
--- NOTE: This won't work in all terminal emulators/tmux/etc. Try your own mapping
--- or just use <C-\><C-n> to exit terminal mode
-vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
+-- 현재 파일 경로 복사. clipboard=unnamedplus 라 @+ = OS 클립보드. which-key 그룹은 spec 의 '<leader>c' 참고.
+local function copy_path(mod, label)
+  return function()
+    local p = vim.fn.expand('%' .. mod)
+    vim.fn.setreg('+', p)
+    vim.notify('복사됨 (' .. label .. '): ' .. p)
+  end
+end
+vim.keymap.set('n', '<leader>cp', copy_path(':p', '절대'), { desc = 'Copy [P]ath (절대)' })
+vim.keymap.set('n', '<leader>cr', copy_path(':.', 'cwd상대'), { desc = 'Copy path ([R]elative)' })
+vim.keymap.set('n', '<leader>cn', copy_path(':t', '파일명'), { desc = 'Copy file[N]ame' })
+vim.keymap.set('n', '<leader>cd', copy_path(':p:h', '디렉토리'), { desc = 'Copy [D]ir' })
+
+-- 터미널 모드 탈출(→ Normal): 단일 키 <C-q>.
+--   <Esc><Esc> 는 안 씀 — 첫 Esc 를 timeoutlen(300ms) 동안 붙들어, claude 등 TUI 의 Esc 가
+--   느려지고 오작동하는 부작용이 있었음. 단일 키라 지연 0, claude 의 Esc 는 그대로 claude 로 감.
+--   <C-q> 는 claude/셸이 거의 안 쓰는 키. 캐논 폴백은 항상 <C-\><C-n>.
+vim.keymap.set('t', '<C-q>', '<C-\\><C-n>', { desc = 'Exit terminal mode (to Normal)' })
 
 -- TIP: Disable arrow keys in normal mode
 -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
@@ -320,6 +331,7 @@ require('lazy').setup({
       -- Document existing key chains
       spec = {
         { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
+        { '<leader>c', group = '[C]opy path' },
         { '<leader>t', group = '[T]oggle' },
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
         { 'gr', group = 'LSP Actions', mode = { 'n' } },
@@ -1036,7 +1048,7 @@ require('lazy').setup({
        "nvim-tree/nvim-web-devicons"
       },
     keys = {
-        { '<leader>o', '<cmd>AerialToggle!<CR>', desc = 'Aerial Toggle' },
+        { '<leader>O', '<cmd>AerialToggle!<CR>', desc = 'Aerial Toggle' },
       },
   },
   {
@@ -1371,11 +1383,98 @@ require('lazy').setup({
         end,
       })
 
-      -- \sc: 시크릿 메모 열기 (~/wiki/secrets/memo.md.age, age 자동 복호화)
+      -- \sc: 시크릿 파일 브라우저 (~/wiki/secrets/*.age, age 자동 복호화)
+      --   Telescope 로 secrets 폴더 내 .age 파일 전체 검색. 새 파일 추가 시 키매핑 수정 불필요.
       vim.keymap.set('n', '\\sc', function()
-        vim.cmd('edit ' .. vim.fn.fnameescape(vim.fn.expand('~/wiki/secrets/memo.md.age')))
-      end, { desc = 'Open wiki secret memo (age, ~/wiki/secrets/memo.md.age)' })
+        require('telescope.builtin').find_files {
+          cwd = vim.fn.expand('~/wiki/secrets'),
+          prompt_title = 'Wiki Secrets',
+        }
+      end, { desc = 'Find & open wiki secret files (~/wiki/secrets/*.age)' })
     end
+  },
+
+  -- NOTE(jinbei): Claude Code 통합 — nvim 안에서 Claude Code CLI 연동
+  --   터미널 split 으로 claude 실행 + 버퍼/선택 영역 전송 + 변경 제안을 nvim diff 로 수락/거부.
+  --   prefix <leader>a (AI). 의존성 snacks.nvim 은 터미널/디퍼 UI 용(lazy 가 자동 설치).
+  --   claude CLI 가 PATH 에 있어야 함. 자세한 사용법: 위키 [[remote-dev-workflow]] 참고.
+  {
+    'coder/claudecode.nvim',
+    dependencies = { 'folke/snacks.nvim' },
+    -- lazy-load (cmd/keys 트리거) — 시작 오버헤드 0. claude 안 쓰는 nvim 세션엔 로드 안 됨.
+    --   별도 cmux pane 의 claude 를 /ide 로 붙이려면, 먼저 이 nvim 에서 :ClaudeCodeStart
+    --   (또는 <leader>a*) 한 번 실행 → WS 서버 기동 + ~/.claude/ide/<port>.lock 기록. 그다음 /ide.
+    opts = {
+      -- 별도 cmux pane 의 claude 에 /ide 로 연결해 쓰는 워크플로우라, nvim 이 자체 터미널을
+      -- 띄우지 않게 no-op provider 사용. (기본값이면 send 후 ensure_visible() 가 내장 터미널
+      -- claude 를 새로 띄움 — 외부 pane 과 중복.) send/선택전송/diff 는 WS 로 그대로 동작.
+      terminal = { provider = 'none' },
+      -- auto_start=false: 플러그인 로드 시 WS 서버를 자동 기동하지 않음. 외부 pane 의 claude 를
+      --   /ide 로 붙이는 워크플로우라, /ide 연결 전 <leader>a* (send/선택전송) 는 의미가 없음.
+      --   <leader>aS 로 명시적으로 서버를 띄운 뒤 /ide → 작업, 순서를 명확히 하려는 의도.
+      auto_start = false,
+    },
+    cmd = {
+      'ClaudeCode', 'ClaudeCodeFocus', 'ClaudeCodeSelectModel',
+      'ClaudeCodeAdd', 'ClaudeCodeSend', 'ClaudeCodeTreeAdd', 'ClaudeCodeStatus',
+      'ClaudeCodeStart', 'ClaudeCodeStop', 'ClaudeCodeOpen', 'ClaudeCodeClose',
+      'ClaudeCodeDiffAccept', 'ClaudeCodeDiffDeny', 'ClaudeCodeCloseAllDiffs',
+    },
+    keys = {
+      { '<leader>a', nil, desc = 'AI/Claude Code' },
+      { '<leader>aS', '<cmd>ClaudeCodeStart<cr>', desc = 'Start Claude WS server (/ide 전 1단계)' },
+      { '<leader>ac', '<cmd>ClaudeCode<cr>', desc = 'Toggle Claude' },
+      { '<leader>af', '<cmd>ClaudeCodeFocus<cr>', desc = 'Focus Claude' },
+      { '<leader>ar', '<cmd>ClaudeCode --resume<cr>', desc = 'Resume Claude' },
+      { '<leader>aC', '<cmd>ClaudeCode --continue<cr>', desc = 'Continue Claude' },
+      { '<leader>am', '<cmd>ClaudeCodeSelectModel<cr>', desc = 'Select Claude model' },
+      { '<leader>ab', '<cmd>ClaudeCodeAdd %<cr>', desc = 'Add current buffer' },
+      { '<leader>as', '<cmd>ClaudeCodeSend<cr>', mode = 'v', desc = 'Send selection to Claude' },
+      { '<leader>aa', '<cmd>ClaudeCodeDiffAccept<cr>', desc = 'Accept diff' },
+      { '<leader>ad', '<cmd>ClaudeCodeDiffDeny<cr>', desc = 'Deny diff' },
+    },
+  },
+
+  -- NOTE(jinbei): opencode.nvim — nvim 안에서 OpenCode AI 연동
+  --   snacks.nvim(claudecode.nvim 의존성)을 터미널/피커/인풋/디퍼로 재활용.
+  --   opencode CLI 는 이미 homebrew 로 설치됨. 외부 cmux pane 에서 --port 로 실행하거나,
+  --   snacks.terminal 로 내장 실행. <leader>o* prefix.
+  {
+    'nickjvandyke/opencode.nvim',
+    version = '*',
+    dependencies = { 'folke/snacks.nvim' },
+    opts = {
+      server = {
+        -- start = function()
+        --   require('snacks.terminal').open('opencode --port', {
+        --     win = { position = 'right', enter = false },
+        --   })
+        -- end,
+      },
+    },
+    keys = {
+      { '<leader>o', nil, desc = 'AI/OpenCode' },
+      { '<leader>oa', function() require('opencode').ask('@this: ') end, desc = 'Ask opencode…', mode = { 'n', 'x' } },
+      { '<leader>ob', function() require('opencode').ask('@buffer: ') end, desc = 'Ask opencode (buffer)', mode = { 'n', 'x' } },
+      { '<leader>os', function() require('opencode').select() end, desc = 'Select opencode…', mode = { 'n', 'x' } },
+      { 'go', function() return require('opencode').operator('@this ') end, desc = 'Add range to opencode', expr = true, mode = { 'n', 'x' } },
+      { 'goo', function() return require('opencode').operator('@this ') .. '_' end, desc = 'Add line to opencode', expr = true },
+      { '<C-.>', function() require('opencode').command('session.half.page.up') end, desc = 'Scroll opencode up', mode = { 'n', 't' } },
+      { '<C-,>', function() require('opencode').command('session.half.page.down') end, desc = 'Scroll opencode down', mode = { 'n', 't' } },
+    },
+    -- snacks.nvim integration: input/picker
+    config = function()
+      require('snacks').setup({
+        input = { enabled = true },
+        picker = {
+          enabled = true,
+          actions = {
+            opencode_send = function(...) return require('opencode').snacks_picker_send(...) end,
+          },
+          win = { input = { keys = { ['<a-a>'] = { 'opencode_send', mode = { 'n', 'i' } } } } },
+        },
+      })
+    end,
   },
 
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
