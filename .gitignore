@@ -1,0 +1,3 @@
+# vim-plug 설치본 (런타임 생성물 — 추적 안 함)
+.vim/plugged/
+.vim/autoload/
