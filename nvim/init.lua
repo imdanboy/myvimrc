@@ -335,6 +335,7 @@ require('lazy').setup({
         { '<leader>t', group = '[T]oggle' },
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
         { 'gr', group = 'LSP Actions', mode = { 'n' } },
+        { '<leader>g', group = 'AI/Gemini' },
         -- \w*: 프로젝트/홈 위키 진입. 상세는 [[/topics/nvim-wiki-keys]].
         { '\\w', group = 'Wiki' },
         { '\\wt', group = 'todos (w/h)' },
@@ -1443,20 +1444,29 @@ require('lazy').setup({
     'nickjvandyke/opencode.nvim',
     version = '*',
     dependencies = { 'folke/snacks.nvim' },
-    opts = {
-      server = {
-        -- start = function()
-        --   require('snacks.terminal').open('opencode --port', {
-        --     win = { position = 'right', enter = false },
-        --   })
-        -- end,
-      },
-    },
+    -- opencode.nvim 은 setup() 이 없음 — 설정은 vim.g.opencode_opts 로 (lazy `opts` 는 무시됨).
+    --   서버는 server/discovery 가 실행 중인 opencode 프로세스(외부 cmux pane 등)를 자동 발견.
+    init = function()
+      vim.o.autoread = true -- events.reload (opencode 가 편집한 버퍼 자동 리로드)에 필요
+      vim.g.opencode_opts = {
+        select = {
+          prompts = { -- 내장 라이브러리(explain/fix/test/document/optimize/review…)에 커스텀 merge
+            refactor = 'Refactor @this for clarity without changing behavior',
+          },
+        },
+      }
+    end,
     keys = {
       { '<leader>o', nil, desc = 'AI/OpenCode' },
       { '<leader>oa', function() require('opencode').ask('@this: ') end, desc = 'Ask opencode…', mode = { 'n', 'x' } },
       { '<leader>ob', function() require('opencode').ask('@buffer: ') end, desc = 'Ask opencode (buffer)', mode = { 'n', 'x' } },
-      { '<leader>os', function() require('opencode').select() end, desc = 'Select opencode…', mode = { 'n', 'x' } },
+      { '<leader>os', function() require('opencode').select() end, desc = 'Select opencode prompt…', mode = { 'n', 'x' } },
+      -- 최소 프롬프트 한 키 호출 (gp hook 대응) — 내장 prompts 라이브러리 직결. 비주얼 선택 시 @this=선택영역.
+      { '<leader>oe', function() require('opencode').prompt('Explain @this and its context') end, desc = 'opencode: Explain', mode = { 'n', 'x' } },
+      { '<leader>of', function() require('opencode').prompt('Fix @diagnostics') end, desc = 'opencode: Fix diagnostics', mode = { 'n', 'x' } },
+      { '<leader>ot', function() require('opencode').prompt('Add tests for @this') end, desc = 'opencode: Tests', mode = { 'n', 'x' } },
+      { '<leader>od', function() require('opencode').prompt('Add comments documenting @this') end, desc = 'opencode: Document', mode = { 'n', 'x' } },
+      { '<leader>or', function() require('opencode').prompt('Review @this for correctness and readability') end, desc = 'opencode: Review', mode = { 'n', 'x' } },
       { 'go', function() return require('opencode').operator('@this ') end, desc = 'Add range to opencode', expr = true, mode = { 'n', 'x' } },
       { 'goo', function() return require('opencode').operator('@this ') .. '_' end, desc = 'Add line to opencode', expr = true },
       { '<C-.>', function() require('opencode').command('session.half.page.up') end, desc = 'Scroll opencode up', mode = { 'n', 't' } },
@@ -1469,12 +1479,107 @@ require('lazy').setup({
         picker = {
           enabled = true,
           actions = {
-            opencode_send = function(...) return require('opencode').snacks_picker_send(...) end,
+            -- 선택한 picker 항목(파일/grep 결과 등)을 opencode 컨텍스트로 전송. (<a-a>)
+            opencode_send = function(picker)
+              local items = vim.tbl_map(function(item)
+                return item.file and require('opencode').format { path = item.file, from = item.pos, to = item.end_pos } or item.text
+              end, picker:selected { fallback = true })
+              require('opencode').prompt(table.concat(items, ', ') .. ' ')
+            end,
           },
           win = { input = { keys = { ['<a-a>'] = { 'opencode_send', mode = { 'n', 'i' } } } } },
         },
       })
     end,
+  },
+
+  -- NOTE(jinbei): gp.nvim — nvim 안에서 Gemini(googleai) 연동
+  --   채팅(GpChatNew/Toggle/Finder) + 인라인 리라이트/추가/설명. API 키는 환경변수
+  --   GOOGLEAI_API_KEY (셸 프로파일 export, 평문은 디스크 미경유). <leader>g prefix.
+  --   기본 모델 gemini-2.5-flash (무료 티어 OK). 에이전트 전환은 :GpNextAgent. opencode 와는
+  --   직접 연동 불가(opencode 서버는 OpenAI 비호환) — 같은 백엔드 공유만 가능.
+  {
+    'robitx/gp.nvim',
+    -- lazy-load: gp 명령/키맵 트리거 시에만 로드 → 시작 오버헤드 0.
+    cmd = {
+      'GpChatNew', 'GpChatToggle', 'GpChatFinder', 'GpChatRespond',
+      'GpRewrite', 'GpAppend', 'GpPrepend', 'GpExplain', 'GpImplement',
+      'GpContext', 'GpNextAgent', 'GpAgent', 'GpStop', 'GpChatDelete',
+      'GpNew', 'GpVnew', 'GpEnew', 'GpTabnew', 'GpPopup',
+    },
+    config = function()
+      require('gp').setup {
+        -- googleai 프로바이더만 키를 연결. (gp 기본 openai 등은 그대로 남지만 키 없어 미사용)
+        providers = {
+          googleai = {
+            endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/{{model}}:streamGenerateContent?key={{secret}}',
+            secret = os.getenv 'GOOGLEAI_API_KEY',
+          },
+        },
+        -- Gemini 에이전트만 노출. gp 기본 OpenAI/Gemini 에이전트는 전부 비활성 →
+        --   :GpNextAgent 순환이 아래 명시 에이전트로만 단순화됨.
+        --   ⚠️ 무료 티어 주의: gemini-2.5-pro / gemini-2.0-flash 는 free tier 한도 0(=429).
+        --      gemini-2.5-flash, gemini-2.5-flash-lite (및 *-latest) 만 무료로 응답함.
+        --      유료(결제 등록) 전환 시 아래 GeminiPro 주석 해제하면 됨.
+        agents = {
+          { name = 'ChatGPT4o', disable = true },
+          { name = 'ChatGPT4o-mini', disable = true },
+          { name = 'ChatGPT-o3-mini', disable = true },
+          { name = 'CodeGPT4o', disable = true },
+          { name = 'CodeGPT4o-mini', disable = true },
+          { name = 'CodeGPT-o3-mini', disable = true },
+          { name = 'ChatGemini', disable = true },   -- gp 내장 Gemini 에이전트 숨김
+          { name = 'CodeGemini', disable = true },
+          {
+            name = 'Gemini', provider = 'googleai', chat = true, command = true,
+            model = { model = 'gemini-2.5-flash', temperature = 0.7, top_p = 1 },
+            system_prompt = require('gp.defaults').chat_system_prompt,
+          },
+          {
+            name = 'GeminiFlashLite', provider = 'googleai', chat = true, command = true,
+            model = { model = 'gemini-2.5-flash-lite', temperature = 0.7, top_p = 1 },
+            system_prompt = require('gp.defaults').code_system_prompt,
+          },
+          -- 유료 전환 시 해제:
+          -- {
+          --   name = 'GeminiPro', provider = 'googleai', chat = true, command = true,
+          --   model = { model = 'gemini-2.5-pro', temperature = 0.7, top_p = 1 },
+          --   system_prompt = require('gp.defaults').chat_system_prompt,
+          -- },
+        },
+        default_chat_agent = 'Gemini',
+        default_command_agent = 'Gemini',
+        hooks = {
+          -- :GpExplain — 선택 코드를 팝업으로 설명 (gp 기본 예시 hook, 버퍼 미수정)
+          Explain = function(gp, params)
+            local template = 'I have the following code from {{filename}}:\n\n'
+              .. '```{{filetype}}\n{{selection}}\n```\n\n'
+              .. 'Please respond by explaining the code above.'
+            local agent = gp.get_chat_agent()
+            gp.Prompt(params, gp.Target.popup, agent, template)
+          end,
+          -- :GpPopup — 자유 질문 입력 → 팝업창에 답변(새 버퍼 안 엶). 순수 질의(선택영역 미포함).
+          Popup = function(gp, params)
+            local agent = gp.get_chat_agent()
+            gp.Prompt(params, gp.Target.popup, agent, '{{command}}', 'Ask Gemini (popup): ')
+          end,
+        },
+      }
+    end,
+    keys = {
+      { '<leader>g', nil, desc = 'AI/Gemini' },
+      { '<leader>gc', '<cmd>GpChatNew<cr>', desc = 'New Gemini chat', mode = { 'n', 'x' } },
+      { '<leader>gt', '<cmd>GpChatToggle<cr>', desc = 'Toggle Gemini chat' },
+      { '<leader>gf', '<cmd>GpChatFinder<cr>', desc = 'Find Gemini chats' },
+      { '<leader>gd', '<cmd>GpChatDelete<cr>', desc = 'Delete Gemini chat' },
+      { '<leader>gr', '<cmd>GpRewrite<cr>', desc = 'Gemini rewrite', mode = { 'n', 'x' } },
+      { '<leader>ga', '<cmd>GpAppend<cr>', desc = 'Gemini append', mode = { 'n', 'x' } },
+      { '<leader>gp', '<cmd>GpPrepend<cr>', desc = 'Gemini prepend', mode = { 'n', 'x' } },
+      { '<leader>ge', '<cmd>GpExplain<cr>', desc = 'Gemini explain', mode = { 'n', 'x' } },
+      { '<leader>gq', '<cmd>GpPopup<cr>', desc = 'Gemini ask (popup)', mode = { 'n', 'x' } },
+      { '<leader>gn', '<cmd>GpNextAgent<cr>', desc = 'Next Gemini agent' },
+      { '<leader>gs', '<cmd>GpStop<cr>', desc = 'Stop Gemini' },
+    },
   },
 
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`

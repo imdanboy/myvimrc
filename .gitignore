@@ -1,3 +1,7 @@
 # vim-plug 설치본 (런타임 생성물 — 추적 안 함)
 .vim/plugged/
 .vim/autoload/
+
+# nvim 런타임/머신별 산출물 (~/.config/nvim 심링크로 여기 생길 수 있음 — 추적 안 함)
+nvim/venv/
+nvim/saved/
